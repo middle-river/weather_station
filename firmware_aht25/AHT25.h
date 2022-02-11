@@ -30,7 +30,7 @@ public:
     delay(100);
     Wire.requestFrom(ADDRESS, 6);
     uint8_t data[6];
-    for (int i = 0; i < 6; i++) data[i] = Wire.read();
+    for (int i = 0; i < 6; i++) if (Wire.available()) data[i] = Wire.read();
     const uint32_t tmp_humi = (data[1] << 12) | (data[2] << 4) | (data[3] >> 4);
     const uint32_t tmp_temp = ((data[3] & 0x0f) << 16) | (data[4] << 8) | data[5];
     humi = tmp_humi / (float)(1 << 20) * 100.0f;

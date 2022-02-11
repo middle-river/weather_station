@@ -128,7 +128,7 @@ public:
     write(0xf7);
     Wire.requestFrom(ADDRESS, 8);
     uint8_t data[8];
-    for (int i = 0; i < 8; i++) data[i] = Wire.read();
+    for (int i = 0; i < 8; i++) if (Wire.available()) data[i] = Wire.read();
     const uint32_t tmp_pres = (data[0] << 12) | (data[1] << 4) | (data[2] >> 4);
     const uint32_t tmp_temp = (data[3] << 12) | (data[4] << 4) | (data[5] >> 4);
     const uint32_t tmp_humi = (data[6] << 8) | (data[7]);

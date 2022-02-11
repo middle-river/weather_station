@@ -137,9 +137,13 @@ void setup() {
   while (!Serial) ;
   Serial.println("Weather Station Sensor with BME280.");
 
-  const int h = hallRead();
+  int h = 0;
+  for (int i = 0; i < 100; i++) {
+    h += hallRead();
+  }
+  h /= 100;
   Serial.println("Hall sensor: " + String(h));
-  if (h < 10 || h > 70) config();
+  if (h < 0 || h > 70) config();
   preferences.begin("config", true);
 
   // Get the battery voltage.
@@ -186,7 +190,7 @@ void setup() {
   // Deep sleep.
   Serial.println("Awake time: " + String(millis() / 1000.0f, 2) + " sec.");
   Serial.println("Sleeping.");
-  esp_sleep_enable_timer_wakeup(9.5f * 60 * 1000 * 1000);	// Sleep for 9.5 minute.
+  esp_sleep_enable_timer_wakeup(9.0f * 60 * 1000 * 1000);	// Sleep for 9.0 minute.
   esp_deep_sleep_start();
 }
  
