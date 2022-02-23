@@ -25,7 +25,7 @@ public:
     delay(100);
   }
 
-  void get(float &temp, float &humi) {
+  void get(float &temp, float &humi, float &pres) {
     write(3, (const uint8_t *)"\xac\x33\x00");	// Trigger measurement.
     delay(100);
     Wire.requestFrom(ADDRESS, 6);
@@ -35,5 +35,6 @@ public:
     const uint32_t tmp_temp = ((data[3] & 0x0f) << 16) | (data[4] << 8) | data[5];
     humi = tmp_humi / (float)(1 << 20) * 100.0f;
     temp = tmp_temp / (float)(1 << 20) * 200.0f - 50.0f;
+    pres = 0.0f;
   }
 };

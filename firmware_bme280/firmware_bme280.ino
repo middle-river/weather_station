@@ -1,32 +1,38 @@
-// Weather Station Sensor with BME280.
-// 2021-12-21  T. Nakagawa
+// Weather Station Sensor with BME280/AHT25.
+// 2021-12-23,2022-02-23  T. Nakagawa
+
+#define SENSOR 0	// 0:BME280, 1:AHT25.
 
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <soc/rtc_cntl_reg.h>
+#if SENSOR == 0
 #include "BME280.h"
+#else
+#include "AHT25.h"
+#endif
 
 extern "C" int rom_phy_get_vdd33();
 
-constexpr int SHUTDOWN_VOLTAGE = 2.7;
+constexpr float SHUTDOWN_VOLTAGE = 2.7;
 constexpr int PIN_SDA = 21;
 constexpr int PIN_SCL = 22;
 constexpr int PIN_VCC = 23;
 
 Preferences preferences;
-BME280 bme280(PIN_SDA, PIN_SCL);
+#if SENSOR == 0
+BME280 sensor(PIN_SDA, PIN_SCL);
+#else
+AHT25 sensor(PIN_SDA, PIN_SCL);
+#endif
 
 float getVoltage() {
-  btStart();
-  delay(1000);
   float vdd = 0.0f;
-  for (int i = 0; i < 100; i++) {
-    delay(10);
-    vdd += rom_phy_get_vdd33();
-  }
-  btStop();
-  vdd /= 100.0f;
+  do {
+    delay(5);
+    vdd = rom_phy_get_vdd33();
+  } while (vdd > 1000.0);
   vdd = -0.0000135277f * vdd * vdd + 0.0128399f * vdd + 0.474502f;
   return vdd;
 }
@@ -63,7 +69,8 @@ void config() {
 
   WiFiServer server(80);
   server.begin();
-  while (true) {
+  bool accept = true;
+  while (accept) {
     WiFiClient client = server.available();
     if (client) {
       const String line = client.readStringUntil('\n');
@@ -99,6 +106,7 @@ void config() {
         } else {
           message = "Key was not found.";
         }
+        if (key == "CHAN") accept = false;
       }
 
       client.println("<!DOCTYPE html>");
@@ -113,6 +121,14 @@ void config() {
       client.stop();
     }
   }
+
+  // Connect to the AP for storing the AP information.
+  Serial.println("Connecting to AP.");
+  server.end();
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(preferences.getString("SSID").c_str(), preferences.getString("PASS").c_str(), preferences.getString("CHAN").toInt());
+  while (true) ;
 }
 
 void sendData(int id, float temp, float humi, float pres, float volt) {
@@ -124,7 +140,7 @@ void sendData(int id, float temp, float humi, float pres, float volt) {
   String payload = "id=" + String(id);
   payload.concat("&temp=" + String(temp, 2));
   payload.concat("&humi=" + String(humi, 2));
-  payload.concat("&pres=" + String(pres, 2));
+  if (pres > 0.0f) payload.concat("&pres=" + String(pres, 2));
   payload.concat("&volt=" + String(volt, 2));
   const int response = client.POST(payload);
   Serial.println("Response code: " + String(response));
@@ -135,62 +151,62 @@ void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  // Disable brown-out detection.
   Serial.begin(115200);
   while (!Serial) ;
-  Serial.println("Weather Station Sensor with BME280.");
+  Serial.println("Weather Station Client " + String(SENSOR));
 
+  // Check the hall sensor.
   int h = 0;
-  for (int i = 0; i < 100; i++) {
-    h += hallRead();
-  }
+  for (int i = 0; i < 100; i++) h += hallRead();
   h /= 100;
   Serial.println("Hall sensor: " + String(h));
   if (h < 0 || h > 70) config();
   preferences.begin("config", true);
 
-  // Get the battery voltage.
-  const float volt = getVoltage();
-  Serial.println("Battery voltage: " + String(volt) + " V");
-  if (volt < SHUTDOWN_VOLTAGE) {
-    Serial.println("Battery voltage is low. Shutting down.");
-    esp_deep_sleep_start();  // Sleep indefinitely.
-  }
-
-  // Get the temperature, humidity and pressure.
+  // Get the temperature and humidity.
   pinMode(PIN_VCC, OUTPUT);
   digitalWrite(PIN_VCC, HIGH);
   delay(100);
-  bme280.begin();
+  sensor.begin();
   float temp, humi, pres;
-  for (int i = 0; i < 10; i++) bme280.get(temp, humi, pres);	// Wait until the sensor outputs become stable.
-  bme280.get(temp, humi, pres);
+  for (int i = 0; i < 10; i++) sensor.get(temp, humi, pres);	// Wait until the sensor outputs become stable.
+  sensor.get(temp, humi, pres);
   digitalWrite(PIN_VCC, LOW);
   Serial.println("Temperature: " + String(temp) + " C");
   Serial.println("Humidity: " + String(humi) + " %");
   Serial.println("Pressure: " + String(pres) + " hPa");
 
   // Enable WiFi.
+  Serial.println("Connecting WiFi... " + String(millis()));
   WiFi.mode(WIFI_STA);
-  WiFi.begin(preferences.getString("SSID").c_str(), preferences.getString("PASS").c_str());
-  Serial.print("Connecting WiFi.");
-  while (WiFi.status() != WL_CONNECTED) {
-    if (millis() >= 30000) break;
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
+  WiFi.begin();
+  while (WiFi.status() != WL_CONNECTED && millis() < 10000) delay(10);
 
+  // Get the battery voltage.
+  Serial.println("Measuring voltage... " + String(millis()));
+  const float volt = getVoltage();
+  Serial.println("Battery voltage: " + String(volt) + " V");
+
+  // Send the data.
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Sending the data.");
-    sendData(0, temp, humi, pres, volt);
+    Serial.println("Sending the data... " + String(millis()));
+    sendData(SENSOR, temp, humi, pres, volt);
   }
 
   // Disable WiFi.
+  Serial.println("Disconnecting... " + String(millis()));
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
 
   // Deep sleep.
-  Serial.println("Awake time: " + String(millis() / 1000.0f, 2) + " sec.");
-  Serial.println("Sleeping.");
-  esp_sleep_enable_timer_wakeup(9.0f * 60 * 1000 * 1000);	// Sleep for 9.0 minute.
+  if (volt < SHUTDOWN_VOLTAGE) {
+    Serial.println("Shutting down due to low battery voltage.");
+    esp_deep_sleep_start();  // Sleep indefinitely.
+  }
+  float wait = preferences.getString("WAIT").toFloat();
+  if (wait < 1.0f) wait = 10.0f;
+  const int sleep = wait * 60 * 1000 * 1000;
+  esp_sleep_enable_timer_wakeup(sleep);
+  Serial.println("Sleeping time: " + String(sleep));
+  Serial.println("Sleeping... " + String(millis()));
   esp_deep_sleep_start();
 }
  
