@@ -2,6 +2,8 @@
 // 2021-12-23,2022-02-23  T. Nakagawa
 
 #define SENSOR 0	// 0:BME280, 1:AHT25.
+#define VOLTAGE_ADJUST (3.30f / 3.59f)
+#define HALL_NEUTRAL 0
 
 #include <HTTPClient.h>
 #include <Preferences.h>
@@ -15,7 +17,7 @@
 
 extern "C" int rom_phy_get_vdd33();
 
-constexpr float SHUTDOWN_VOLTAGE = 2.7;
+constexpr float SHUTDOWN_VOLTAGE = 2.6;
 constexpr int PIN_SDA = 21;
 constexpr int PIN_SCL = 22;
 constexpr int PIN_VCC = 23;
@@ -28,12 +30,8 @@ AHT25 sensor(PIN_SDA, PIN_SCL);
 #endif
 
 float getVoltage() {
-  float vdd = 0.0f;
-  do {
-    delay(5);
-    vdd = rom_phy_get_vdd33();
-  } while (vdd > 1000.0);
-  vdd = -0.0000135277f * vdd * vdd + 0.0128399f * vdd + 0.474502f;
+  const int v = rom_phy_get_vdd33();
+  const float vdd =  (0.0005045f * v + 0.3368f) * VOLTAGE_ADJUST;
   return vdd;
 }
 
@@ -132,17 +130,16 @@ void config() {
 }
 
 void sendData(int id, float temp, float humi, float pres, float volt) {
-  const String url = preferences.getString("UURL");
+  String url = preferences.getString("UURL");
   Serial.println("URL: " + url);
+  url += "?id=" + String(id);
+  url += "&temp=" + String(temp, 2);
+  url += "&humi=" + String(humi, 2);
+  if (pres > 0.0f) url += "&pres=" + String(pres, 2);
+  url += "&volt=" + String(volt, 2);
   HTTPClient client;
   client.begin(url);
-  client.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  String payload = "id=" + String(id);
-  payload.concat("&temp=" + String(temp, 2));
-  payload.concat("&humi=" + String(humi, 2));
-  if (pres > 0.0f) payload.concat("&pres=" + String(pres, 2));
-  payload.concat("&volt=" + String(volt, 2));
-  const int response = client.POST(payload);
+  const int response = client.GET();
   Serial.println("Response code: " + String(response));
   client.end();
 }
@@ -158,7 +155,7 @@ void setup() {
   for (int i = 0; i < 100; i++) h += hallRead();
   h /= 100;
   Serial.println("Hall sensor: " + String(h));
-  if (h < 0 || h > 70) config();
+  if (h < HALL_NEUTRAL - 40 || h > HALL_NEUTRAL + 40) config();
   preferences.begin("config", true);
 
   // Get the temperature and humidity.
@@ -178,7 +175,7 @@ void setup() {
   Serial.println("Connecting WiFi... " + String(millis()));
   WiFi.mode(WIFI_STA);
   WiFi.begin();
-  while (WiFi.status() != WL_CONNECTED && millis() < 10000) delay(10);
+  while (WiFi.status() != WL_CONNECTED && millis() < 10000) delay(1);
 
   // Get the battery voltage.
   Serial.println("Measuring voltage... " + String(millis()));

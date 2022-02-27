@@ -2,21 +2,30 @@
 # CGI for Weather Station with ESP32.
 # 2021-12-21  T. Nakagawa
 
-import base64
-import cgi
 import datetime
 import fcntl
-import io
-import matplotlib.dates
-import matplotlib.pyplot as plt
+import os
 
 LCKFILE = '/usr/lib/cgi-bin/wst.lck'
 LOGFILE = '/usr/lib/cgi-bin/wst.log'
 DATFILE = '/usr/lib/cgi-bin/wst.dat'
 
+# Lightweight CGI class (URL encoding is not supported)
+class cgi_FieldStorage(dict):
+  def __init__(self):
+    params = os.environ.get('QUERY_STRING', '').split('&')
+    for param in params:
+      if '=' not in param:
+        continue
+      key, value = param.split('=', 1)
+      self[key] = value
+
+  def getfirst(self, key, default=None):
+    return self.get(key, default)
+
 def read_data(text, origin):
   # This data structure contains only the data necessary for rendering recent weekly/daily charts.
-  weekly = [[''] * 24 * 7, [''] * 24 * 7]	# 1 hour interval data for a week.
+  weekly = [[''] * 24 * 7, [''] * 24 * 7]	# hourly data for a week.
   daily = [[''] * 6 * 24, [''] * 6 * 24]	# 10 minute interval data for a day.
   for buf in text.split('\n'):
     if not buf:
@@ -41,6 +50,12 @@ def write_data(f, data):
       print(buf, file=f)
 
 def plot_chart(title, unit, x0, y0, x1, y1, fmt):
+  import base64
+  import io
+  import os
+  os.environ['MPLCONFIGDIR'] = '/tmp/'
+  import matplotlib.pyplot as plt
+  import matplotlib.dates
   fig, ax = plt.subplots()
   fig.autofmt_xdate(rotation=45)
   ax.set_title(title)
@@ -87,24 +102,17 @@ def collect(form):
       f.write(buf)
 
     # Update the data file.
-    with open(DATFILE, 'r+') as f:
-      data = read_data(f.read() + buf, now)
-      f.truncate(0)
-      f.seek(0)
-      write_data(f, data)
+    if cid == 0 or cid == 1:
+      with open(DATFILE, 'r+') as f:
+        data = read_data(f.read() + buf, now)
+        f.truncate(0)
+        f.seek(0)
+        write_data(f, data)
 
     fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
 
-  # Print a page.
-  print('Content-Type: text/html')
-  print('')
-  print('<!DOCTYPE html>');
-  print('<html>');
-  print('<head><title>Weather Station</title></head>');
-  print('<body>');
-  print('Successfully uploaded.');
-  print('</body>');
-  print('</html>');
+  # Output a response.
+  print('Content-Type: text/plain\r\n\r\nOK')
 
 def render():
   # Read the data.
@@ -159,7 +167,7 @@ def render():
   print('</html>');
 
 def main():
-  form = cgi.FieldStorage()
+  form = cgi_FieldStorage()
   if 'id' in form:
     collect(form)
   else:
