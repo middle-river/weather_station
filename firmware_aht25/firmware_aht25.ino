@@ -2,7 +2,7 @@
 // 2021-12-23,2022-02-23  T. Nakagawa
 
 #define SENSOR 1	// 0:BME280, 1:AHT25.
-#define VOLTAGE_ADJUST (3.30f / 3.36f)
+#define VOLTAGE_ADJUST (3.30f / 3.34f)
 #define HALL_NEUTRAL 13
 
 #include <HTTPClient.h>
@@ -17,7 +17,7 @@
 
 extern "C" int rom_phy_get_vdd33();
 
-constexpr float SHUTDOWN_VOLTAGE = 2.6;
+constexpr float SHUTDOWN_VOLTAGE = 2.6f;
 constexpr int PIN_SDA = 21;
 constexpr int PIN_SCL = 22;
 constexpr int PIN_VCC = 23;
@@ -30,7 +30,9 @@ AHT25 sensor(PIN_SDA, PIN_SCL);
 #endif
 
 float getVoltage() {
-  const int v = rom_phy_get_vdd33();
+  int v = 0;
+  for (int i = 0; i < 20; i++) v += rom_phy_get_vdd33();
+  v /= 20;
   const float vdd =  (0.0005045f * v + 0.3368f) * VOLTAGE_ADJUST;
   return vdd;
 }
