@@ -17,7 +17,6 @@
 
 extern "C" int rom_phy_get_vdd33();
 
-constexpr float SHUTDOWN_VOLTAGE = 2.6f;
 constexpr int PIN_SDA = 21;
 constexpr int PIN_SCL = 22;
 constexpr int PIN_VCC = 23;
@@ -69,8 +68,7 @@ void config() {
 
   WiFiServer server(80);
   server.begin();
-  bool accept = true;
-  while (accept) {
+  while (true) {
     WiFiClient client = server.available();
     if (client) {
       const String line = client.readStringUntil('\n');
@@ -96,6 +94,10 @@ void config() {
         key.trim();
         val.trim();
         Serial.println("key=" + key + ", val=" + val);
+        if (key == "QUIT") {
+          Serial.println("Quit the configuration mode.");
+          break;
+        }
         if (key.length()) {
           preferences.putString(key.c_str(), val);
           if (preferences.getString(key.c_str()) == val) {
@@ -106,7 +108,6 @@ void config() {
         } else {
           message = "Key was not found.";
         }
-        if (key == "CHAN") accept = false;
       }
 
       client.println("<!DOCTYPE html>");
@@ -195,11 +196,6 @@ void setup() {
   WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);
 
-  // Deep sleep.
-  if (volt < SHUTDOWN_VOLTAGE) {
-    Serial.println("Shutting down due to low battery voltage.");
-    esp_deep_sleep_start();  // Sleep indefinitely.
-  }
   float wait = preferences.getString("WAIT").toFloat();
   if (wait < 1.0f) wait = 10.0f;
   const int sleep = wait * 60 * 1000 * 1000;
