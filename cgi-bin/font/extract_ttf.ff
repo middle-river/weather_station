@@ -1,0 +1,10 @@
+#!/usr/bin/fontforge -lang=ff
+Open("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
+SelectAll();
+SelectFewer("0", "9");
+SelectFewer("-");
+SelectFewer(".");
+SelectFewer("/");
+SelectFewer(":");
+DetachAndRemoveGlyphs();
+Generate("numerals.ttf");
