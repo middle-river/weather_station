@@ -16,13 +16,13 @@ LABELS = ['Temperature (&#8451;)', 'Humidity (%)', 'Pressure (hPa)', 'Battery (V
 
 def read_data(file):
   LINELEN = 70
-  with open(file, 'r') as f:
-    f.seek(max(f.tell() - LINELEN * 24 * 60 // 5 * STATIONS * 7, 0), 0)
+  with open(file, 'rb') as f:
+    f.seek(-LINELEN * 24 * 60 // 5 * STATIONS * 7, 2)
     f.readline()  # Skip the incomplete line.
     lines = f.readlines()
   data = [[] for _ in range(STATIONS)]
   for line in lines:
-    tmst, host, vals = line.split()
+    tmst, host, vals = line.decode('ascii').split()
     if host != 'wst':
       continue
     epoch = datetime.datetime.fromisoformat(tmst).timestamp()
