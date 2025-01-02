@@ -1,7 +1,7 @@
 // Weather Station Sensor with BME280/AHT25.
 // 2021-12-23,2022-02-23,2023-05-28  T. Nakagawa
 
-#define STID 0	// Station ID.
+#define STID 3	// Station ID.
 #if STID == 0
 #define SENSOR 0	// 0:BME280, 1:AHT25.
 #define VOLTAGE_ADJUST (3.30f / 3.67f)
@@ -14,6 +14,10 @@
 #define SENSOR 1	// 0:BME280, 1:AHT25.
 #define VOLTAGE_ADJUST (3.30f / 3.65f)
 #define HALL_NEUTRAL -72
+#elif STID == 3
+#define SENSOR 0	// 0:BME280, 1:AHT25.
+#define VOLTAGE_ADJUST (3.30f / 3.68f)
+#define HALL_NEUTRAL 18
 #endif
 
 #include <Preferences.h>
@@ -33,6 +37,7 @@ extern "C" int rom_phy_get_vdd33();
 constexpr int PIN_SDA = 21;
 constexpr int PIN_SCL = 22;
 constexpr int PIN_VCC = 23;
+constexpr float SHUTDOWN_VOLTAGE = 2.30f;
 
 Preferences preferences;
 #if SENSOR == 0
@@ -42,6 +47,7 @@ AHT25 sensor(PIN_SDA, PIN_SCL);
 #endif
 
 RTC_DATA_ATTR int active_time = 0;
+RTC_DATA_ATTR int low_battery_counter;
 
 // This function must be called immediately after enabling WiFi/BT.
 float getVoltage() {
@@ -250,6 +256,20 @@ void setup() {
   WiFi.mode(WIFI_OFF);
   active_time = (int)(millis() - wifi_start);
   Serial.println("WiFi active time: " + String(active_time));
+
+  if (volt < SHUTDOWN_VOLTAGE) {
+    low_battery_counter++;
+    if (low_battery_counter >= 10) {
+      Serial.println("Shutting down due to low battery voltage.");
+      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_OFF);
+      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_SLOW_MEM, ESP_PD_OPTION_OFF);
+      esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_FAST_MEM, ESP_PD_OPTION_OFF);
+      esp_sleep_pd_config(ESP_PD_DOMAIN_XTAL, ESP_PD_OPTION_OFF);
+      esp_deep_sleep_start();
+    }
+  } else {
+    low_battery_counter = 0;
+  }
 
   float wait = preferences.getString("WAIT").toFloat();
   if (wait < 1.0f) wait = 10.0f;
